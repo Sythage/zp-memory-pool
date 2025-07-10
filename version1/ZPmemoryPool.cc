@@ -19,7 +19,7 @@ MemoryPool::~MemoryPool(){
         Slot* next = cur->next;
         // 等同于 free(reinterpret_cast《void*》（first_block_）)
         // 转化为void指针，因为void 类型不需要调用析构函数，只释放空间
-        operator delete(reinterpret_cast<void*>(cur)); // 这一句有点复杂
+        operator delete(reinterpret_cast<void*>(cur)); // 释放整个Block，operator delete 释放整个分配块
         cur = next;
     }
 };

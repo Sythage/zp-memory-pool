@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../version1/ZPmemoryPool.h"
+#include "ZPmemoryPool.h"
 #include <thread>
 #include <vector>
 #include <atomic>
