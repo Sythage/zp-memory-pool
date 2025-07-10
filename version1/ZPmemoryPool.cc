@@ -1,12 +1,15 @@
-#include "../include/ZPmemoryPool.h"
+#include "ZPmemoryPool.h"
 #include <cassert>
 #include <cstddef>
 #include <mutex>
+#include <stdexcept>
+#include <iostream>
 
 namespace ZPmemoryPool {
 
 MemoryPool::MemoryPool(size_t block_size)
-: block_size_(block_size)
+: block_size_(block_size), slot_size_(0), first_block_(nullptr), 
+  current_slot_(nullptr), free_list_(nullptr), last_slot_(nullptr)
 {};
 
 MemoryPool::~MemoryPool(){
@@ -46,19 +49,19 @@ void* MemoryPool::Allocate(){
     Slot* temp;
     {
         std::lock_guard<std::mutex> lock(mutex_for_block_);
-        if(current_slot_ >= last_slot_){
+        if(current_slot_ == nullptr || current_slot_ > last_slot_){
             // 当前memory block is 不可用，开辟新一块
             AllocateNewBlock();
         }
 
         temp = current_slot_;
-        // 这里不能直接current_slot_ += slot_size_ 因为current_slot_是slot* 类型，所以需要除以slotsize再加一
-        current_slot_ += slot_size_ / sizeof(Slot);
+        // Move to next slot
+        current_slot_ = reinterpret_cast<Slot*>(reinterpret_cast<char*>(current_slot_) + slot_size_);
     }
     return temp;
 }
 
-void* MemoryPool::Deallocate(void* ptr){
+void MemoryPool::Deallocate(void* ptr){
     if(ptr)
     {
         // hui shou memory, which is inserted free list by head insert method
@@ -76,11 +79,39 @@ void MemoryPool::AllocateNewBlock()
     reinterpret_cast<Slot*>(new_block)->next = first_block_;
     first_block_ = reinterpret_cast<Slot*>(new_block);
 
-    char* body = reinterpret_cast<char*>(new_block)+sizeof(Slot*);
+    char* body = reinterpret_cast<char*>(new_block) + sizeof(Slot*);
     size_t padding_size = PadPointer(body, slot_size_);
-    current_slot_ = reinterpret_cast<Slot*>(reinterpret_cast<size_t>(new_block)+block_size_-slot_size_+1);
+    
+    // Set current_slot_ to the beginning of usable memory (after padding)
+    current_slot_ = reinterpret_cast<Slot*>(body + padding_size);
+    
+    // Set last_slot_ to the last possible slot in this block
+    char* block_end = reinterpret_cast<char*>(new_block) + block_size_;
+    last_slot_ = reinterpret_cast<Slot*>(block_end - slot_size_);
+}
 
-    free_list_ = nullptr;
+size_t MemoryPool::PadPointer(char* p, size_t align)
+{// 让pointer 对齐到槽大小的数倍
+    // align  == slot_size
+    return (align - reinterpret_cast<size_t>(p)) % align;
+    // 一个槽包括了一个指针
+}
+
+void HashBucket::initMemoryPool(){
+    for(int i = 0; i < MEMORY_POOL_NUM; i++){
+        getMemoryPool(i).init((i+1) * SLOT_BASE_SIZE);
+        // 0-->8;1-->16;...8-->64... 
+    }
+}
+
+// 单例模式
+MemoryPool& HashBucket::getMemoryPool(int index){
+    if(index < 0 || index >= MEMORY_POOL_NUM)
+    {
+        throw std::out_of_range("MemoryPool index out of range");
+    }
+    static MemoryPool pools[MEMORY_POOL_NUM];
+    return pools[index];
 }
 
 

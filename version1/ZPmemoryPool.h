@@ -6,11 +6,12 @@
  * @version 1.0
  */
 
-#ifndef ZP_MEMOEY_POOPL_H
-#define ZP_MEMOEY_POOPL_H
+#ifndef ZP_MEMORY_POOL_H
+#define ZP_MEMORY_POOL_H
 
 #include <cstddef>
 #include <mutex>
+#include <utility>
 
 /**
  * @namespace ZPmemoryPool
@@ -96,18 +97,11 @@ public:
     void* Allocate();
     
     /**
-     * @brief Deallocate a memory slot back to the pool
-     * @param ptr Pointer to the memory slot to be deallocated
-     * @return Pointer to the deallocated slot (for chaining operations)
+     * @brief deallocate memory slot from the pool
      * 
-     * Returns the memory slot to the free list for future reuse.
-     * The slot becomes available for subsequent Allocate() calls.
-     * 
-     * @note This method is thread-safe
-     * @warning The pointer must have been obtained from this pool's Allocate() method
-     * @warning Do not use the pointer after calling this method
+     * @param ptr 
      */
-    void* Deallocate(void* ptr);
+    void Deallocate(void* ptr);
 private:
     /**
      * @brief Allocate a new memory block when the current block is exhausted
@@ -145,7 +139,68 @@ private:
 };
 
 
+class HashBucket
+{
+public:
+    static void initMemoryPool();
+    static MemoryPool& getMemoryPool(int index);
 
+    static void* useMemory(size_t size){
+        if(size <=  0){
+            return nullptr;
+        }
+        if(size > MAX_SLOT_SIZE)
+            return operator new(size);
+
+        // equal size/8 向上去整（因为分配内存只能大不能小）
+        return getMemoryPool(((size + 7) / SLOT_BASE_SIZE) - 1).Allocate();
+    }
+
+    static void freeMemory(void* ptr, size_t size){
+        if(!ptr){
+            return;
+        }
+        if(size > MAX_SLOT_SIZE)
+        {
+            operator delete(ptr);
+            return;
+        }
+
+        getMemoryPool(((size + 7) / SLOT_BASE_SIZE) - 1).Deallocate(ptr);
+    }
+
+    template<typename T, typename... Args>
+    friend T* newElement(Args&&... args);
+
+    template<typename T>
+    friend void deleteElement(T* p);
+
+};
+
+
+template<typename T, typename... Args>
+T* newElement(Args&&... args){
+    T* p = nullptr;
+    // 根据元素大小选取合适的内存池分配内存
+    if((p = reinterpret_cast<T*>(HashBucket::useMemory(sizeof(T)))) != nullptr){
+        // 在分配的内存上构造对象
+        new(p) T(std::forward<Args>(args)...);
+    }
+    return p;
 }
+
+template<typename T>
+void deleteElement(T* p)
+{
+    // 对象析构
+    if(p)
+    {
+        p->~T();
+        // 内存回收
+        HashBucket::freeMemory(reinterpret_cast<void*>(p), sizeof(T));
+    }
+}
+
+}// namespace ZPmemoryPool
 
 #endif

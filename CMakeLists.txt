@@ -13,9 +13,22 @@ file(GLOB SOURCES "*.cc")
 
 
 find_package(fmt CONFIG REQUIRED)
+find_package(gtest CONFIG REQUIRED)
 
 #We're using the project name as the target name, but you can change it to make them different.
 #With this setup, the name of the executable will be the same as the project name.
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Create a library for the memory pool code
+add_library(ZPMemoryPoolLib version1/ZPmemoryPool.cc)
+target_include_directories(ZPMemoryPoolLib PUBLIC version1)
+
+# Create test executable
+add_executable(tests test/test_main.cc)
+target_link_libraries(tests PRIVATE GTest::gtest GTest::gtest_main ZPMemoryPoolLib)
+
+# Create example test executable
+add_executable(example_tests test/example_test.cc)
+target_link_libraries(example_tests PRIVATE GTest::gtest GTest::gtest_main ZPMemoryPoolLib)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE fmt::fmt)
